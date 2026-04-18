@@ -1,347 +1,62 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>محلل التداول الاحترافي</title>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+<script>
+async function fetchPrices() {
+  try {
+    const symbols = COINS.map(c => `${c}USDT`).join(',');
+    const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=[${COINS.map(c => `"${c}USDT"`).join(',')}]`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-:root {
-  --bg: #060d14;
-  --bg2: #080f16;
-  --bg3: #0d1820;
-  --card: #0a141e;
-  --border: #0e2030;
-  --border2: #132840;
-  --green: #00e5a0;
-  --red: #ff3d6b;
-  --yellow: #ffc107;
-  --blue: #00bcd4;
-  --purple: #7c4dff;
-  --text: #e8f4ff;
-  --text2: #6a8fa8;
-  --text3: #3a5a72;
-  --glow-green: 0 0 20px rgba(0,229,160,0.3);
-  --glow-red: 0 0 20px rgba(255,61,107,0.3);
+    if (!Array.isArray(data)) return;
+
+    data.forEach(d => {
+      const sym = d.symbol.replace('USDT', '');
+      prices[sym] = {
+        price: parseFloat(d.lastPrice),
+        change: parseFloat(d.priceChangePercent),
+        volume: parseFloat(d.quoteVolume),
+        high: parseFloat(d.highPrice),
+        low: parseFloat(d.lowPrice)
+      };
+    });
+
+    renderTicker();
+  } catch (e) {
+    console.error('fetchPrices failed', e);
+  }
 }
 
-html, body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Tajawal', sans-serif;
-  min-height: 100vh;
-  overflow-x: hidden;
-  -webkit-font-smoothing: antialiased;
+async function fetchKlines(symbol, interval) {
+  const limit = interval === '15m' ? 100 : 60;
+  const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}USDT&interval=${interval}&limit=${limit}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0,229,160,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,229,160,0.025) 1px, transparent 1px);
-  background-size: 40px 40px;
-  pointer-events: none;
-  z-index: 0;
+async function fetchFearGreed() {
+  try {
+    const res = await fetch('https://api.alternative.me/fng/?limit=1');
+    const data = await res.json();
+
+    if (!data || !data.data || !data.data.length) throw new Error('Bad FNG response');
+
+    const val = parseInt(data.data[0].value);
+    const cls = data.data[0].value_classification;
+
+    document.getElementById('fgValue').textContent = val;
+    const color = val < 25 ? '#ff3d6b' : val < 45 ? '#ff9800' : val < 55 ? '#ffc107' : val < 75 ? '#8bc34a' : '#00e5a0';
+    document.getElementById('fgValue').style.color = color;
+    document.getElementById('fgLabel').textContent = cls;
+    document.getElementById('fgLabel').style.color = color;
+
+    const deg = (val / 100) * 180;
+    document.getElementById('fgFill').style.borderTopColor = color;
+    document.getElementById('fgFill').style.borderLeftColor = color;
+    document.getElementById('fgFill').style.transform = `rotate(${135 + deg}deg)`;
+  } catch (e) {
+    console.error('fetchFearGreed failed', e);
+    document.getElementById('fgValue').textContent = '--';
+    document.getElementById('fgLabel').textContent = 'لا يتوفر';
+  }
 }
-
-.container {
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 12px;
-  position: relative;
-  z-index: 1;
-}
-
-.bismillah-banner {
-  text-align: center;
-  padding: 16px 12px 12px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--border2);
-}
-
-.bismillah-text {
-  font-family: 'Scheherazade New', 'Traditional Arabic', 'Arial Unicode MS', serif;
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--green);
-  letter-spacing: 1px;
-  text-shadow: 0 0 20px rgba(0,229,160,0.4);
-  line-height: 1.6;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.absher-text {
-  font-family: 'Tajawal', sans-serif;
-  font-size: 18px;
-  font-weight: 700;
-  color: rgba(0,229,160,0.75);
-  letter-spacing: 2px;
-  display: block;
-}
-
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 0 14px;
-  border-bottom: 1px solid var(--border2);
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.logo { display: flex; align-items: center; gap: 10px; }
-
-.logo-icon {
-  width: 40px; height: 40px;
-  background: linear-gradient(135deg, var(--green), var(--blue));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px;
-  box-shadow: var(--glow-green);
-  flex-shrink: 0;
-}
-
-.logo-text { font-size: 18px; font-weight: 900; letter-spacing: -0.5px; }
-.logo-sub { font-size: 9px; color: var(--text2); letter-spacing: 1.5px; text-transform: uppercase; }
-
-.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-.capital-box {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 8px 12px;
-}
-
-.capital-label { font-size: 11px; color: var(--text2); }
-.capital-input {
-  background: var(--bg3);
-  border: 1px solid var(--border2);
-  color: var(--green);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 15px;
-  font-weight: 700;
-  width: 80px;
-  padding: 3px 6px;
-  border-radius: 6px;
-  text-align: center;
-  outline: none;
-}
-.capital-input:focus { border-color: var(--green); }
-.capital-sym { color: var(--text2); font-size: 13px; }
-
-.live-badge {
-  display: flex; align-items: center; gap: 5px;
-  background: rgba(0,229,160,0.08);
-  border: 1px solid rgba(0,229,160,0.2);
-  border-radius: 20px;
-  padding: 5px 12px;
-  font-size: 11px;
-  color: var(--green);
-}
-.live-dot {
-  width: 6px; height: 6px;
-  background: var(--green);
-  border-radius: 50%;
-  animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-  0%,100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.8); }
-}
-
-.sound-btn {
-  background: var(--bg3);
-  border: 1px solid var(--border2);
-  color: var(--text2);
-  padding: 7px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 15px;
-  transition: all 0.2s;
-}
-.sound-btn.on { border-color: var(--green); color: var(--green); background: rgba(0,229,160,0.08); }
-
-.alert-banner {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  background: rgba(0,229,160,0.08);
-  border: 1px solid rgba(0,229,160,0.3);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 12px;
-  animation: slideDown 0.4s ease;
-}
-.alert-banner.show { display: flex; }
-.alert-banner.danger { background: rgba(255,61,107,0.08); border-color: rgba(255,61,107,0.3); }
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.alert-icon { font-size: 22px; }
-.alert-text { flex: 1; }
-.alert-title { font-size: 13px; font-weight: 700; }
-.alert-sub { font-size: 11px; color: var(--text2); }
-.alert-close { background: none; border: none; color: var(--text2); font-size: 16px; cursor: pointer; padding: 4px; }
-
-.top-stats {
-  display: grid;
-  grid-template-columns: 160px 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.fear-greed-card {
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 14px;
-  padding: 16px 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.fg-title { font-size: 10px; color: var(--text2); letter-spacing: 1px; text-transform: uppercase; text-align: center; }
-
-.fg-gauge {
-  position: relative;
-  width: 110px;
-  height: 60px;
-  overflow: hidden;
-}
-
-.fg-arc {
-  width: 110px;
-  height: 110px;
-  border-radius: 50%;
-  border: 10px solid var(--bg3);
-  border-bottom-color: transparent;
-  border-right-color: transparent;
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: rotate(135deg);
-}
-
-.fg-fill {
-  width: 110px;
-  height: 110px;
-  border-radius: 50%;
-  border: 10px solid transparent;
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: rotate(135deg);
-  transition: all 1s ease;
-}
-
-.fg-value {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 24px;
-  font-weight: 700;
-}
-
-.fg-label { font-size: 12px; font-weight: 700; text-align: center; }
-
-.market-overview {
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 14px;
-  padding: 14px;
-  overflow: hidden;
-}
-
-.market-title { font-size: 11px; color: var(--text2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
-
-.coins-ticker {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.coin-chip {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  user-select: none;
-}
-.coin-chip:active { transform: scale(0.97); }
-.coin-chip.active {
-  border-color: var(--green);
-  background: rgba(0,229,160,0.06);
-  box-shadow: var(--glow-green);
-}
-.chip-name { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
-.chip-price { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text2); }
-.chip-change { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; }
-.chip-change.up { color: var(--green); }
-.chip-change.down { color: var(--red); }
-
-.summary-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.summary-card {
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 12px;
-  padding: 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.sum-icon { font-size: 22px; }
-.sum-label { font-size: 10px; color: var(--text2); margin-bottom: 3px; }
-.sum-value { font-size: 16px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-
-.main-card {
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 14px;
-  overflow: hidden;
-  margin-bottom: 14px;
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255,255,255,0.02);
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.card-title { font-size: 14px; font-weight: 700; }
-.card-title span { color: var(--green); }
-
-.analyze-btn {
-  background: linear-gradient(135deg, var(--green), var(--blue));
-  color: #000;
-  border: none;
-  padding: 9px 20px;
-  border-radius: 9px;
-  font-family: 'Tajawal', sans-serif;
-  font-
+</script>
